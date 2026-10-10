@@ -1,0 +1,320 @@
+<!--DISCLAIMER: THIS TOOL WAS CREATED WITH ASSISTANCE FROM AI. IT ASSISTED IN DIALING IN THE ANIMATION AND STREAMER.BOT CONNECTION. IT ASSISTED IN STRUCTURING THE README AS WELL. IF YOU DO NOT WANT TO USE TOOLS CREATED WITH ASSISTANCE FROM AI, FEEL FREE TO TAKE THE CODE AND ADJUST IT AS YOU WISH.-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamer Gauntlet Wheel</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: transparent;
+            background-size: cover;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            overflow: hidden; 
+        }
+
+        .overlay-container {
+            width: 500px;
+            height: 200px; 
+            position: relative;
+            perspective: 500px; 
+        }
+
+        .game-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+        }
+
+        .game-item {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            margin-top: -30px; 
+            border-radius: 30px; 
+            display: flex;
+            align-items: center;
+            padding: 0 20px 0 10px;
+            box-sizing: border-box;
+            
+            background-color: rgba(20, 20, 25, 0.99); 
+            backdrop-filter: blur(12px); 
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15); 
+            transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1); 
+            transform-origin: center center;
+        }
+
+        .game-item.active {
+            transform: translate3d(0, 0, 0) rotateX(0deg);
+            opacity: 1;
+            z-index: 1;
+            background-color: rgba(30, 30, 40, 0.90); 
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        .game-item.prev {
+            transform: translate3d(0, -55px, -60px) rotateX(45deg);
+            opacity: .90;
+            z-index: 1;
+        }
+
+        .game-item.next {
+            transform: translate3d(0, 55px, -60px) rotateX(-45deg);
+            opacity: .90;
+            z-index: 1;
+        }
+
+        .game-item.hidden-up {
+            transform: translate3d(0, -120px, -120px) rotateX(75deg);
+            opacity: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .game-item.hidden-down {
+            transform: translate3d(0, 120px, -120px) rotateX(-75deg);
+            opacity: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .game-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%; 
+            object-fit: cover; 
+            margin-right: 15px;
+            flex-shrink: 0;
+            border: 1px solid rgba(255, 255, 255, 0.3); 
+            background-color: #222; 
+        }
+
+        .game-name {
+            flex-grow: 1;
+            text-align: center; 
+            font-size: 40px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-shadow: 1px 1px 2px rgba(0,0,0,1); 
+            padding: 0 1px; 
+        }
+
+        .game-position {
+            display: flex;
+            align-items: baseline;
+            justify-content: flex-end;
+            min-width: 55px; 
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+
+        .pos-current { font-size: 26px; font-weight: 900; color: #fff; }
+        .pos-slash { font-size: 22px; font-weight: 700; color: #ddd; margin: 0 2px; }
+        .pos-total { font-size: 14px; font-weight: bold; color: #aaa; }
+    </style>
+</head>
+<body>
+
+    <div class="overlay-container" id="overlay">
+        <ul class="game-list" id="gameList"></ul>
+    </div>
+
+    <script>
+        // =====================================================================
+        //  EDIT THIS SECTION
+        // =====================================================================
+
+        // Your game list, in order. Two ways to write each entry:
+        //   "Game Name"                              -> uses the numbered image
+        //                                               (images/1.png or 1.jpg, images/2.png or 2.jpg, ...)
+        //   { title: "Game Name", image: "images/custom.jpg" }  -> uses your own image
+        const GAMES = [
+            "Game 1",
+            "Game 2",
+            "Game 3",
+            "Game 4",
+            "Game 5",
+            "Game 6",
+            "Game 7",
+            "Game 8",
+            "Game 9",
+            "Game 10"
+        ];
+
+        // Where the numbered images live (images/1.png, images/2.jpg, ...).
+        // Each number is tried with these file types, in order, so you can mix
+        // PNG, JPG, and so on. Keep file extensions lowercase.
+        const IMAGE_FOLDER = "images";
+        const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "gif"];
+
+        // Streamer.bot WebSocket server address (Servers/Clients -> WebSocket Server).
+        const STREAMERBOT_URL = "ws://localhost:8080/";
+
+        // =====================================================================
+        //  YOU SHOULDN'T NEED TO CHANGE ANYTHING BELOW THIS LINE
+        // =====================================================================
+
+        const games = GAMES.map((entry, i) => {
+            const game = (typeof entry === "string") ? { title: entry } : entry;
+            return {
+                title: game.title,
+                image: game.image || null,
+                base: `${IMAGE_FOLDER}/${i + 1}`
+            };
+        });
+
+        const listElement = document.getElementById('gameList');
+        const total = games.length;
+        let currentIndex = 0;
+
+        // If an image is missing, show a simple numbered circle instead of a broken icon.
+        function placeholderIcon(number) {
+            const svg =
+                '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80">' +
+                '<rect width="80" height="80" fill="#2a2a35"/>' +
+                '<text x="40" y="53" font-family="Segoe UI, Arial, sans-serif" font-size="36" ' +
+                'font-weight="700" fill="#ffffff" text-anchor="middle">' + number + '</text></svg>';
+            return 'data:image/svg+xml,' + encodeURIComponent(svg);
+        }
+
+        function buildList() {
+            games.forEach((game, index) => {
+                const li = document.createElement('li');
+                li.className = 'game-item';
+
+                const img = document.createElement('img');
+                img.className = 'game-icon';
+                img.alt = '';
+                const candidates = game.image
+                    ? [game.image]
+                    : IMAGE_EXTS.map(ext => `${game.base}.${ext}`);
+                let attempt = 0;
+                img.onerror = () => {
+                    attempt++;
+                    if (attempt < candidates.length) {
+                        img.src = candidates[attempt];
+                    } else {
+                        img.onerror = null;
+                        img.src = placeholderIcon(index + 1);
+                    }
+                };
+                img.src = candidates[0];
+
+                const name = document.createElement('div');
+                name.className = 'game-name';
+                name.textContent = game.title;
+
+                const pos = document.createElement('div');
+                pos.className = 'game-position';
+                pos.innerHTML =
+                    `<span class="pos-current">${index + 1}</span>` +
+                    `<span class="pos-slash">/</span>` +
+                    `<span class="pos-total">${total}</span>`;
+
+                li.append(img, name, pos);
+                listElement.appendChild(li);
+            });
+            updateDisplay();
+        }
+
+        function updateDisplay() {
+            const items = document.querySelectorAll('.game-item');
+            items.forEach((item, index) => {
+                item.className = 'game-item';
+                let dist = index - currentIndex;
+                if (dist > total / 2) dist -= total;
+                if (dist < -total / 2) dist += total;
+
+                if (dist === 0) item.classList.add('active');
+                else if (dist === -1) item.classList.add('prev');
+                else if (dist === 1) item.classList.add('next');
+                else if (dist < -1) item.classList.add('hidden-up');
+                else item.classList.add('hidden-down');
+            });
+        }
+
+        // Jump to a game. Index is 0-based: 0 = first game. Out-of-range values wrap around.
+        function setIndex(n) {
+            n = parseInt(n, 10);
+            if (isNaN(n) || total === 0) return;
+            currentIndex = ((n % total) + total) % total;
+            updateDisplay();
+        }
+
+        // ---------- Streamer.bot connection (auto-reconnects) ----------
+        function connectToStreamerbot() {
+            let ws;
+            try {
+                ws = new WebSocket(STREAMERBOT_URL);
+            } catch (err) {
+                console.error("Could not open WebSocket:", err);
+                setTimeout(connectToStreamerbot, 5000);
+                return;
+            }
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    request: 'Subscribe',
+                    events: { General: ['Custom'] },
+                    id: 'gauntlet-sub'
+                }));
+                // Ask Streamer.bot where the wheel should be, so a reload or an
+                // OBS restart doesn't put the wheel back on the first game.
+                ws.send(JSON.stringify({
+                    request: 'GetGlobal',
+                    variable: 'gauntletIndex',
+                    persisted: true,
+                    id: 'gauntlet-sync'
+                }));
+                console.log("Connected and subscribed to Streamer.bot!");
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const response = JSON.parse(event.data);
+
+                    // Reply to the "where should the wheel be?" request.
+                    if (response.id === 'gauntlet-sync') {
+                        const v = response.variable;
+                        const saved = (v && typeof v === 'object') ? v.value
+                                    : (response.value !== undefined ? response.value : v);
+                        if (saved !== undefined && saved !== null) setIndex(saved);
+                        else console.log("No saved position yet:", response);
+                        return;
+                    }
+
+                    if (response.event &&
+                        response.event.source === 'General' &&
+                        response.event.type === 'Custom' &&
+                        response.data &&
+                        response.data.targetIndex !== undefined) {
+                        setIndex(response.data.targetIndex);
+                    }
+                } catch (err) {
+                    console.error("Failed to parse websocket message:", err);
+                }
+            };
+
+            ws.onerror = () => ws.close();
+            ws.onclose = () => setTimeout(connectToStreamerbot, 5000);
+        }
+
+        // The wheel stays on the current game until Streamer.bot sends a new targetIndex.
+        buildList();
+        connectToStreamerbot();
+    </script>
+</body>
+</html>
